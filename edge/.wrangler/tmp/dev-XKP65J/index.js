@@ -10,39 +10,67 @@ var src_default = {
         ok: true,
         service: "edge-gateway",
         ts: (/* @__PURE__ */ new Date()).toISOString(),
-        country: request.cf?.country ?? "unknown"
+        country: request.cf?.country ?? "unknown",
+        colo: request.cf?.colo ?? "unknown"
       });
     }
     const apiKey = request.headers.get("x-api-key");
     if (!apiKey || apiKey !== env.EDGE_API_KEY) {
       return new Response("Unauthorized", { status: 401 });
     }
-    const origin = new URL(env.ORIGIN_BASE_URL);
-    origin.pathname = url.pathname.replace(/^\/api/, "");
-    origin.search = url.search;
+    const country = request.cf?.country ?? "unknown";
+    let originBase = env.ORIGIN_DEFAULT;
+    const canaryRatio = Number(env.CANARY_RATIO || "0");
+    const isCanary = Math.random() < canaryRatio;
+    if (isCanary && env.ORIGIN_V2) {
+      originBase = env.ORIGIN_V2;
+    } else {
+      if (country === "US" && env.ORIGIN_US) {
+        originBase = env.ORIGIN_US;
+      } else if (["DE", "FR", "NL", "TR"].includes(country) && env.ORIGIN_EU) {
+        originBase = env.ORIGIN_EU;
+      } else {
+        originBase = env.ORIGIN_DEFAULT;
+      }
+    }
+    const originUrl = new URL(originBase);
+    originUrl.pathname = url.pathname.replace(/^\/api/, "");
+    originUrl.search = url.search;
+    originUrl.searchParams.set(
+      "__v",
+      originBase === env.ORIGIN_V2 ? "v2" : "v1"
+    );
     if (request.method === "GET") {
-      const cache = await caches.open("edge-gateway-v1");
-      const cacheKey = new Request(origin.toString(), request);
+      const cache = await caches.open("edge-cache-v1");
+      const cacheKey = new Request(originUrl.toString(), {
+        method: "GET"
+      });
       const cached = await cache.match(cacheKey);
       if (cached) {
         return cached;
       }
-      const res = await fetch(origin.toString(), {
+      const res2 = await fetch(originUrl.toString(), {
         method: "GET",
         headers: forwardHeaders(request)
       });
-      const cachedRes = new Response(res.body, res);
-      cachedRes.headers.set("Cache-Control", "public, max-age=30");
-      ctx.waitUntil(
-        cache.put(cacheKey, cachedRes.clone())
-      );
-      return cachedRes;
+      const response2 = new Response(res2.body, res2);
+      response2.headers.set("Cache-Control", "public, max-age=30");
+      response2.headers.set("x-edge-origin", originBase);
+      response2.headers.set("x-canary", isCanary ? "true" : "false");
+      response2.headers.set("x-geo-country", country);
+      ctx.waitUntil(cache.put(cacheKey, response2.clone()));
+      return response2;
     }
-    return fetch(origin.toString(), {
+    const res = await fetch(originUrl.toString(), {
       method: request.method,
       headers: forwardHeaders(request),
       body: request.body
     });
+    const response = new Response(res.body, res);
+    response.headers.set("x-edge-origin", originBase);
+    response.headers.set("x-canary", isCanary ? "true" : "false");
+    response.headers.set("x-geo-country", country);
+    return response;
   }
 };
 function forwardHeaders(req) {
@@ -93,7 +121,7 @@ var jsonError = /* @__PURE__ */ __name(async (request, env, _ctx, middlewareCtx)
 }, "jsonError");
 var middleware_miniflare3_json_error_default = jsonError;
 
-// .wrangler/tmp/bundle-QE26mn/middleware-insertion-facade.js
+// .wrangler/tmp/bundle-o7Iij0/middleware-insertion-facade.js
 var __INTERNAL_WRANGLER_MIDDLEWARE__ = [
   middleware_ensure_req_body_drained_default,
   middleware_miniflare3_json_error_default
@@ -125,7 +153,7 @@ function __facade_invoke__(request, env, ctx, dispatch, finalMiddleware) {
 }
 __name(__facade_invoke__, "__facade_invoke__");
 
-// .wrangler/tmp/bundle-QE26mn/middleware-loader.entry.ts
+// .wrangler/tmp/bundle-o7Iij0/middleware-loader.entry.ts
 var __Facade_ScheduledController__ = class ___Facade_ScheduledController__ {
   constructor(scheduledTime, cron, noRetry) {
     this.scheduledTime = scheduledTime;
