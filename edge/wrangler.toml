@@ -3,5 +3,5 @@ main = "src/index.ts"
 compatibility_date = "2025-01-01"
 
 [vars]
-ORIGIN_BASE_URL = "https://REPLACE_ME.trycloudflare.com"
+ORIGIN_BASE_URL = "https://edge-compute-lab.onrender.com"
 EDGE_API_KEY = "dev-secret"
