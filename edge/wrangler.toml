@@ -1,0 +1,7 @@
+name = "edge-gateway"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+[vars]
+ORIGIN_BASE_URL = "https://REPLACE_ME.trycloudflare.com"
+EDGE_API_KEY = "dev-secret"
