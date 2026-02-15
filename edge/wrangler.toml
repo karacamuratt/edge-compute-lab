@@ -4,4 +4,10 @@ compatibility_date = "2025-01-01"
 
 [vars]
 ORIGIN_BASE_URL = "https://edge-compute-lab.onrender.com"
+ORIGIN_DEFAULT = "https://edge-compute-lab.onrender.com"
+ORIGIN_EU = "https://edge-compute-lab.onrender.com"
+ORIGIN_US = "https://edge-compute-lab.onrender.com"
+ORIGIN_V2 = "https://edge-compute-lab-1.onrender.com"
+
 EDGE_API_KEY = "dev-secret"
+CANARY_RATIO = "0.1"

@@ -5,8 +5,10 @@
     "main": "index.js",
     "scripts": {
         "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
+        "dev:v2": "ts-node-dev --respawn --transpile-only src/server-v2.ts",
         "build": "tsc",
-        "start": "node dist/server.js"
+        "start": "node dist/server.js",
+        "start:v2": "node dist/server-v2.js"
     },
     "keywords": [],
     "author": "",
