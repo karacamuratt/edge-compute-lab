@@ -1,9 +1,5 @@
 export class RateLimitCounter {
-    state: DurableObjectState;
-
-    constructor(state: DurableObjectState) {
-        this.state = state;
-    }
+    constructor(private state: DurableObjectState) { }
 
     async fetch(request: Request) {
         const url = new URL(request.url);
@@ -14,27 +10,30 @@ export class RateLimitCounter {
         }
 
         const now = Date.now();
-        const window = 60_000;
+        const windowMs = 60_000;
         const limit = 100;
 
-        const data = (await this.state.storage.get("data")) as {
+        let data = (await this.state.storage.get("data")) as {
             count: number;
             start: number;
-        } | undefined;
+        } | null;
 
-        if (!data || now - data.start > window) {
-            await this.state.storage.put("data", {
+        if (!data || now - data.start > windowMs) {
+            data = {
                 count: 1,
                 start: now,
-            });
+            };
 
-            return Response.json({ allowed: true, remaining: limit - 1 });
+            await this.state.storage.put("data", data);
+
+            return Response.json({
+                allowed: true,
+                remaining: limit - 1,
+            });
         }
 
         if (data.count >= limit) {
-            return new Response("Too Many Requests", {
-                status: 429,
-            });
+            return new Response("Too Many Requests", { status: 429 });
         }
 
         data.count++;

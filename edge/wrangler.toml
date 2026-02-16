@@ -17,8 +17,8 @@ name = "RATE_LIMITER"
 class_name = "RateLimitCounter"
 
 [[migrations]]
-tag = "v1"
-new_classes = ["RateLimitCounter"]
+tag = "v2"
+new_sqlite_classes = ["RateLimitCounter"]
 
 [[kv_namespaces]]
 binding = "FEATURE_FLAGS"
