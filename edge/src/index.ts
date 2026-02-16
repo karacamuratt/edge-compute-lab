@@ -44,9 +44,14 @@ export default {
         const newPricingEnabled =
             (await env.FEATURE_FLAGS.get("new_pricing")) === "true";
 
+        const headers = forwardHeaders(request);
+
+        headers.set("x-trace-id", traceId);
+
         if (newPricingEnabled) {
-            request.headers.set("x-feature-new-pricing", "1");
+            headers.set("x-feature-new-pricing", "1");
         }
+
 
         const country = (request as any).cf?.country ?? "unknown";
 
@@ -95,7 +100,7 @@ export default {
 
             const res = await fetch(originUrl.toString(), {
                 method: "GET",
-                headers: forwardHeaders(request),
+                headers,
             });
 
             const response = new Response(res.body, res);
@@ -104,7 +109,6 @@ export default {
             response.headers.set("x-edge-origin", originBase);
             response.headers.set("x-canary", isCanary ? "true" : "false");
             response.headers.set("x-geo-country", country);
-            response.headers.set("x-trace-id", traceId);
 
             ctx.waitUntil(cache.put(cacheKey, response.clone()));
 
@@ -128,10 +132,15 @@ export default {
 };
 
 function forwardHeaders(req: Request) {
-    const h = new Headers(req.headers);
-    h.delete("host");
+    const headers = new Headers();
 
-    return h;
+    for (const [key, value] of req.headers.entries()) {
+        headers.set(key, value);
+    }
+
+    headers.delete("host");
+
+    return headers;
 }
 
 export interface Env {
