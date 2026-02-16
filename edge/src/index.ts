@@ -134,9 +134,9 @@ export default {
 function forwardHeaders(req: Request) {
     const headers = new Headers();
 
-    for (const [key, value] of req.headers.entries()) {
+    req.headers.forEach((value, key) => {
         headers.set(key, value);
-    }
+    });
 
     headers.delete("host");
 
