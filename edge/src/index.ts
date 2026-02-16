@@ -46,12 +46,9 @@ export default {
 
         const headers = forwardHeaders(request);
 
-        headers.set("x-trace-id", traceId);
-
         if (newPricingEnabled) {
             headers.set("x-feature-new-pricing", "1");
         }
-
 
         const country = (request as any).cf?.country ?? "unknown";
 
@@ -83,8 +80,6 @@ export default {
             "__v",
             originBase === env.ORIGIN_V2 ? "v2" : "v1"
         );
-
-        request.headers.set("x-trace-id", traceId);
 
         if (request.method === "GET") {
             const cache = await caches.open("edge-cache-v1");
