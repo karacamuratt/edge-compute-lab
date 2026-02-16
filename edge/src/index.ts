@@ -4,6 +4,7 @@ export default {
         env: Env,
         ctx: ExecutionContext
     ): Promise<Response> {
+        const traceId = crypto.randomUUID();
         const url = new URL(request.url);
 
         if (url.pathname === "/health") {
@@ -20,6 +21,31 @@ export default {
 
         if (!apiKey || apiKey !== env.EDGE_API_KEY) {
             return new Response("Unauthorized", { status: 401 });
+        }
+
+        const ip =
+            request.headers.get("cf-connecting-ip") ||
+            request.headers.get("x-forwarded-for") ||
+            "unknown";
+
+        const id = env.RATE_LIMITER.idFromName(ip);
+        const stub = env.RATE_LIMITER.get(id);
+
+        const rlRes = await stub.fetch(
+            `https://rl/check?key=${ip}`
+        );
+
+        if (rlRes.status === 429) {
+            return new Response("Rate limit exceeded", {
+                status: 429,
+            });
+        }
+
+        const newPricingEnabled =
+            (await env.FEATURE_FLAGS.get("new_pricing")) === "true";
+
+        if (newPricingEnabled) {
+            request.headers.set("x-feature-new-pricing", "1");
         }
 
         const country = (request as any).cf?.country ?? "unknown";
@@ -53,6 +79,8 @@ export default {
             originBase === env.ORIGIN_V2 ? "v2" : "v1"
         );
 
+        request.headers.set("x-trace-id", traceId);
+
         if (request.method === "GET") {
             const cache = await caches.open("edge-cache-v1");
             const cacheKey = new Request(originUrl.toString(), {
@@ -76,6 +104,7 @@ export default {
             response.headers.set("x-edge-origin", originBase);
             response.headers.set("x-canary", isCanary ? "true" : "false");
             response.headers.set("x-geo-country", country);
+            response.headers.set("x-trace-id", traceId);
 
             ctx.waitUntil(cache.put(cacheKey, response.clone()));
 
@@ -112,4 +141,8 @@ export interface Env {
     ORIGIN_V2?: string;
     EDGE_API_KEY: string;
     CANARY_RATIO: string;
-}
+    RATE_LIMITER: DurableObjectNamespace;
+    FEATURE_FLAGS: KVNamespace;
+};
+
+export { RateLimitCounter } from "./ratelimit/counter";

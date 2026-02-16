@@ -23,6 +23,13 @@ app.get("/products", (_req, res) => {
     });
 });
 
+app.use((req, _res, next) => {
+    console.log(
+        `[TRACE] ${req.headers["x-trace-id"]} ${req.method} ${req.url}`
+    );
+    next();
+});
+
 const port = process.env.PORT ? Number(process.env.PORT) : 3000;
 app.listen(port, () => {
     console.log(`Origin API listening on http://localhost:${port}`);

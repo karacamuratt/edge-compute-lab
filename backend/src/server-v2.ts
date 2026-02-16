@@ -30,6 +30,13 @@ app.get("/products", (_req, res) => {
     });
 });
 
+app.use((req, _res, next) => {
+    console.log(
+        `[TRACE] ${req.headers["x-trace-id"]} ${req.method} ${req.url}`
+    );
+    next();
+});
+
 const port = process.env.PORT ? Number(process.env.PORT) : 3001;
 
 app.listen(port, () => {

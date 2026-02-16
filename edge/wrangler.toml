@@ -11,3 +11,16 @@ ORIGIN_V2 = "https://edge-compute-lab-1.onrender.com"
 
 EDGE_API_KEY = "dev-secret"
 CANARY_RATIO = "0.1"
+
+[[durable_objects.bindings]]
+name = "RATE_LIMITER"
+class_name = "RateLimitCounter"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["RateLimitCounter"]
+
+[[kv_namespaces]]
+binding = "FEATURE_FLAGS"
+id = "c8dbc2d0da0443ae9cd8371d8489bbd2"
+preview_id = "c8dbc2d0da0443ae9cd8371d8489bbd2"
