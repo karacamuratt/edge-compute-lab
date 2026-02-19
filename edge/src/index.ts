@@ -2,6 +2,31 @@ import { logInfo, logError, nowMs, ObsContext } from "./obs";
 import { getNewPricingFlag } from "./flags";
 import { shardKey } from "./utils/shard";
 
+let failureCount = 0;
+let lastFailureTs = 0;
+
+const MAX_FAILURES = 5;
+const RESET_AFTER_MS = 10_000;
+
+async function fetchWithTimeout(
+    url: string,
+    init: RequestInit,
+    timeoutMs = 2500
+) {
+    const controller = new AbortController();
+
+    const id = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+        return await fetch(url, {
+            ...init,
+            signal: controller.signal,
+        });
+    } finally {
+        clearTimeout(id);
+    }
+}
+
 export default {
     async fetch(
         request: Request,
@@ -11,6 +36,7 @@ export default {
         const start = nowMs();
         const traceId = crypto.randomUUID();
         const url = new URL(request.url);
+
         const country = (request as any).cf?.country ?? "unknown";
         const colo = (request as any).cf?.colo ?? "unknown";
 
@@ -35,21 +61,33 @@ export default {
                 request.headers.get("cf-connecting-ip") ||
                 request.headers.get("x-forwarded-for") ||
                 "unknown";
+
             const SHARD_COUNT = 16;
+
             const shard = shardKey(ip, SHARD_COUNT);
-            const id = env.RATE_LIMITER.idFromName(`rl-${shard}-${ip}`);
+
+            const id = env.RATE_LIMITER.idFromName(
+                `rl-${shard}-${ip}`
+            );
+
             const stub = env.RATE_LIMITER.get(id);
-            const rlRes = await stub.fetch(`https://rl/check?key=${ip}`);
+
+            const rlRes = await stub.fetch(
+                `https://rl/check?key=${ip}`
+            );
 
             if (rlRes.status === 429) {
-                return new Response("Rate limit exceeded", { status: 429 });
+                return new Response("Rate limit exceeded", {
+                    status: 429,
+                });
             }
 
             const headers = forwardHeaders(request);
 
             headers.set("x-trace-id", traceId);
 
-            const newPricingEnabled = await getNewPricingFlag(env);
+            const newPricingEnabled =
+                await getNewPricingFlag(env);
 
             if (newPricingEnabled) {
                 headers.set("x-feature-new-pricing", "1");
@@ -57,20 +95,21 @@ export default {
 
             let originBase = env.ORIGIN_DEFAULT;
 
-            const canaryRatio = Number(env.CANARY_RATIO || "0");
+            const canaryRatio = Number(
+                env.CANARY_RATIO || "0"
+            );
+
             const isCanary = Math.random() < canaryRatio;
 
             if (isCanary && env.ORIGIN_V2) {
                 originBase = env.ORIGIN_V2;
-            } else {
-                if (country === "US" && env.ORIGIN_US) {
-                    originBase = env.ORIGIN_US;
-                } else if (
-                    ["DE", "FR", "NL", "TR"].includes(country) &&
-                    env.ORIGIN_EU
-                ) {
-                    originBase = env.ORIGIN_EU;
-                }
+            } else if (country === "US" && env.ORIGIN_US) {
+                originBase = env.ORIGIN_US;
+            } else if (
+                ["DE", "FR", "NL", "TR"].includes(country) &&
+                env.ORIGIN_EU
+            ) {
+                originBase = env.ORIGIN_EU;
             }
 
             const obsCtx: ObsContext = {
@@ -85,41 +124,122 @@ export default {
 
             logInfo("edge.request.start", obsCtx);
 
+            if (
+                failureCount >= MAX_FAILURES &&
+                Date.now() - lastFailureTs <
+                RESET_AFTER_MS
+            ) {
+                logError(
+                    "edge.circuit.open",
+                    obsCtx,
+                    null,
+                    {
+                        failures: failureCount,
+                    }
+                );
+
+                return new Response(
+                    "Upstream temporarily unavailable",
+                    { status: 503 }
+                );
+            }
+
             const originUrl = new URL(originBase);
 
-            originUrl.pathname = url.pathname.replace(/^\/api/, "");
+            originUrl.pathname = url.pathname.replace(
+                /^\/api/,
+                ""
+            );
+
             originUrl.search = url.search;
+
             originUrl.searchParams.set(
                 "__v",
-                originBase === env.ORIGIN_V2 ? "v2" : "v1"
+                originBase === env.ORIGIN_V2
+                    ? "v2"
+                    : "v1"
             );
 
             if (request.method === "GET") {
-                const cache = await caches.open("edge-cache-v1");
-                const cacheKey = new Request(originUrl.toString(), {
-                    method: "GET",
-                });
+                const cache = await caches.open(
+                    "edge-cache-v1"
+                );
+
+                const cacheKey = new Request(
+                    originUrl.toString(),
+                    { method: "GET" }
+                );
+
                 const cached = await cache.match(cacheKey);
 
                 if (cached) {
+                    cached.headers.set(
+                        "x-cache",
+                        "HIT"
+                    );
+
                     return cached;
                 }
 
-                const res = await fetch(originUrl.toString(), {
-                    method: "GET",
-                    headers,
-                });
-                const response = new Response(res.body, res);
-                const durationMs = nowMs() - start;
+                const res = await fetchWithTimeout(
+                    originUrl.toString(),
+                    {
+                        method: "GET",
+                        headers,
+                    }
+                );
 
-                response.headers.set("Cache-Control", "public, max-age=120");
-                response.headers.set("x-trace-id", traceId);
-                response.headers.set("x-edge-origin", originBase);
-                response.headers.set("x-canary", isCanary ? "true" : "false");
-                response.headers.set("x-geo-country", country);
-                response.headers.set("x-edge-duration-ms", String(durationMs));
+                failureCount = 0;
 
-                ctx.waitUntil(cache.put(cacheKey, response.clone()));
+                const response = new Response(
+                    res.body,
+                    res
+                );
+
+                const durationMs =
+                    nowMs() - start;
+
+                response.headers.set(
+                    "Cache-Control",
+                    "public, max-age=120"
+                );
+
+                response.headers.set(
+                    "x-trace-id",
+                    traceId
+                );
+
+                response.headers.set(
+                    "x-edge-origin",
+                    originBase
+                );
+
+                response.headers.set(
+                    "x-canary",
+                    String(isCanary)
+                );
+
+                response.headers.set(
+                    "x-geo-country",
+                    country
+                );
+
+                response.headers.set(
+                    "x-edge-duration-ms",
+                    String(durationMs)
+                );
+
+                response.headers.set(
+                    "x-cache",
+                    "MISS"
+                );
+
+                ctx.waitUntil(
+                    cache.put(
+                        cacheKey,
+                        response.clone()
+                    )
+                );
 
                 logInfo("edge.request.end", obsCtx, {
                     durationMs,
@@ -130,19 +250,49 @@ export default {
                 return response;
             }
 
-            const res = await fetch(originUrl.toString(), {
-                method: request.method,
-                headers,
-                body: request.body,
-            });
-            const response = new Response(res.body, res);
-            const durationMs = nowMs() - start;
+            const res = await fetchWithTimeout(
+                originUrl.toString(),
+                {
+                    method: request.method,
+                    headers,
+                    body: request.body,
+                }
+            );
 
-            response.headers.set("x-trace-id", traceId);
-            response.headers.set("x-edge-origin", originBase);
-            response.headers.set("x-canary", isCanary ? "true" : "false");
-            response.headers.set("x-geo-country", country);
-            response.headers.set("x-edge-duration-ms", String(durationMs));
+            failureCount = 0;
+
+            const response = new Response(
+                res.body,
+                res
+            );
+
+            const durationMs =
+                nowMs() - start;
+
+            response.headers.set(
+                "x-trace-id",
+                traceId
+            );
+
+            response.headers.set(
+                "x-edge-origin",
+                originBase
+            );
+
+            response.headers.set(
+                "x-canary",
+                String(isCanary)
+            );
+
+            response.headers.set(
+                "x-geo-country",
+                country
+            );
+
+            response.headers.set(
+                "x-edge-duration-ms",
+                String(durationMs)
+            );
 
             logInfo("edge.request.end", obsCtx, {
                 durationMs,
@@ -151,7 +301,12 @@ export default {
 
             return response;
         } catch (err) {
-            const durationMs = nowMs() - start;
+            failureCount++;
+            lastFailureTs = Date.now();
+
+            const durationMs =
+                nowMs() - start;
+
             const obsCtx: ObsContext = {
                 traceId,
                 country,
@@ -162,11 +317,19 @@ export default {
                 path: url.pathname,
             };
 
-            logError("edge.request.error", obsCtx, err, {
-                durationMs,
-            });
+            logError(
+                "edge.request.error",
+                obsCtx,
+                err,
+                {
+                    durationMs,
+                }
+            );
 
-            return new Response("Internal Error", { status: 500 });
+            return new Response(
+                "Upstream timeout",
+                { status: 504 }
+            );
         }
     },
 };
@@ -187,10 +350,15 @@ export interface Env {
     ORIGIN_EU?: string;
     ORIGIN_US?: string;
     ORIGIN_V2?: string;
+
     EDGE_API_KEY: string;
     CANARY_RATIO: string;
+
     RATE_LIMITER: DurableObjectNamespace;
     FEATURE_FLAGS: KVNamespace;
 }
 
-export { RateLimitCounterV2, RateLimitCounter } from "./ratelimit/counter";
+export {
+    RateLimitCounterV2,
+    RateLimitCounter,
+} from "./ratelimit/counter";
