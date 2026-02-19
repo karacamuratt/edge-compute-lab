@@ -14,11 +14,11 @@ CANARY_RATIO = "0.1"
 
 [[durable_objects.bindings]]
 name = "RATE_LIMITER"
-class_name = "RateLimitCounter"
+class_name = "RateLimitCounterV2"
 
 [[migrations]]
-tag = "v2"
-new_sqlite_classes = ["RateLimitCounter"]
+tag = "v3"
+new_sqlite_classes = ["RateLimitCounterV2"]
 
 [[kv_namespaces]]
 binding = "FEATURE_FLAGS"

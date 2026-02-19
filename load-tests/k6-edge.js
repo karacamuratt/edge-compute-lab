@@ -27,9 +27,13 @@ export const options = {
 
 const BASE_URL = __ENV.BASE_URL;
 const API_KEY = __ENV.API_KEY;
+const IS_EDGE = __ENV.IS_EDGE === "true";
+
+const path = IS_EDGE ? "/api/products" : "/products";
+const url = `${BASE_URL}${path}`;
+
 
 export default function () {
-    const url = `${BASE_URL}/api/products`;
     const params = {
         headers: {
             "x-api-key": API_KEY,
@@ -40,7 +44,7 @@ export default function () {
 
     check(res, {
         "status is 200": (r) => r.status === 200,
-        "has trace header": (r) => !!r.headers["X-Trace-Id"] || !!r.headers["x-trace-id"],
+        "has trace header": (r) => !IS_EDGE || !!r.headers["x-trace-id"],
     });
 
     sleep(0.2);

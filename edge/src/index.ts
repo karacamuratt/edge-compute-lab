@@ -1,5 +1,6 @@
 import { logInfo, logError, nowMs, ObsContext } from "./obs";
 import { getNewPricingFlag } from "./flags";
+import { shardKey } from "./utils/shard";
 
 export default {
     async fetch(
@@ -34,8 +35,9 @@ export default {
                 request.headers.get("cf-connecting-ip") ||
                 request.headers.get("x-forwarded-for") ||
                 "unknown";
-
-            const id = env.RATE_LIMITER.idFromName(ip);
+            const SHARD_COUNT = 16;
+            const shard = shardKey(ip, SHARD_COUNT);
+            const id = env.RATE_LIMITER.idFromName(`rl-${shard}-${ip}`);
             const stub = env.RATE_LIMITER.get(id);
             const rlRes = await stub.fetch(`https://rl/check?key=${ip}`);
 
@@ -110,7 +112,7 @@ export default {
                 const response = new Response(res.body, res);
                 const durationMs = nowMs() - start;
 
-                response.headers.set("Cache-Control", "public, max-age=30");
+                response.headers.set("Cache-Control", "public, max-age=120");
                 response.headers.set("x-trace-id", traceId);
                 response.headers.set("x-edge-origin", originBase);
                 response.headers.set("x-canary", isCanary ? "true" : "false");
@@ -191,4 +193,4 @@ export interface Env {
     FEATURE_FLAGS: KVNamespace;
 }
 
-export { RateLimitCounter } from "./ratelimit/counter";
+export { RateLimitCounterV2, RateLimitCounter } from "./ratelimit/counter";
