@@ -1,0 +1,26 @@
+name = "edge-gateway"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+[vars]
+ORIGIN_BASE_URL = ""
+ORIGIN_DEFAULT = ""
+ORIGIN_EU = ""
+ORIGIN_US = ""
+ORIGIN_V2 = ""
+
+EDGE_API_KEY = "dev-secret"
+CANARY_RATIO = "0.1"
+
+[[durable_objects.bindings]]
+name = "RATE_LIMITER"
+class_name = "RateLimitCounterV2"
+
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["RateLimitCounterV2"]
+
+[[kv_namespaces]]
+binding = "FEATURE_FLAGS"
+id = ""
+preview_id = ""
