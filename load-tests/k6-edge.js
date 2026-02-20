@@ -34,9 +34,12 @@ const url = `${BASE_URL}${path}`;
 
 
 export default function () {
+    const ip = `10.${__VU}.${__ITER % 255}.1`;
+
     const params = {
         headers: {
             "x-api-key": API_KEY,
+            "x-forwarded-for": ip,
         },
     };
 

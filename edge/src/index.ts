@@ -8,6 +8,7 @@ let lastFailureTs = 0;
 const MAX_FAILURES = 5;
 const RESET_AFTER_MS = 10_000;
 
+// Timeout Wrapper
 async function fetchWithTimeout(
     url: string,
     init: RequestInit,
@@ -41,6 +42,7 @@ export default {
         const colo = (request as any).cf?.colo ?? "unknown";
 
         try {
+            // Health Check
             if (url.pathname === "/health") {
                 return Response.json({
                     ok: true,
@@ -51,12 +53,14 @@ export default {
                 });
             }
 
+            // Auth
             const apiKey = request.headers.get("x-api-key");
 
             if (!apiKey || apiKey !== env.EDGE_API_KEY) {
                 return new Response("Unauthorized", { status: 401 });
             }
 
+            // Rate Limit (Sharded)
             const ip =
                 request.headers.get("cf-connecting-ip") ||
                 request.headers.get("x-forwarded-for") ||
@@ -82,6 +86,7 @@ export default {
                 });
             }
 
+            // Headers
             const headers = forwardHeaders(request);
 
             headers.set("x-trace-id", traceId);
@@ -93,6 +98,7 @@ export default {
                 headers.set("x-feature-new-pricing", "1");
             }
 
+            // Canary + Geo Routing
             let originBase = env.ORIGIN_DEFAULT;
 
             const canaryRatio = Number(
@@ -112,6 +118,7 @@ export default {
                 originBase = env.ORIGIN_EU;
             }
 
+            // Observability
             const obsCtx: ObsContext = {
                 traceId,
                 country,
@@ -124,6 +131,7 @@ export default {
 
             logInfo("edge.request.start", obsCtx);
 
+            // Circuit Breaker
             if (
                 failureCount >= MAX_FAILURES &&
                 Date.now() - lastFailureTs <
@@ -144,6 +152,7 @@ export default {
                 );
             }
 
+            // Building the origin URL
             const originUrl = new URL(originBase);
 
             originUrl.pathname = url.pathname.replace(
@@ -160,6 +169,7 @@ export default {
                     : "v1"
             );
 
+            // GET + Cache
             if (request.method === "GET") {
                 const cache = await caches.open(
                     "edge-cache-v1"
@@ -250,6 +260,7 @@ export default {
                 return response;
             }
 
+            // Non-GET, no cache
             const res = await fetchWithTimeout(
                 originUrl.toString(),
                 {
@@ -345,6 +356,8 @@ function forwardHeaders(req: Request) {
 
     return headers;
 }
+
+// Env types
 export interface Env {
     ORIGIN_DEFAULT: string;
     ORIGIN_EU?: string;
@@ -358,6 +371,7 @@ export interface Env {
     FEATURE_FLAGS: KVNamespace;
 }
 
+// Export for Durable Objects
 export {
     RateLimitCounterV2,
     RateLimitCounter,
